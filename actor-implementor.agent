@@ -1,0 +1,12 @@
+# Actor 2: Implementor (Teammate sub-agent) — read after actor.agent (dispatcher + substrate S1-S6).
+# May be many. Implements a slice of the plan via TDD; coordinates over the stream. Reference S1-S6 from the dispatcher.
+
+1. Red-green-refactor [TDD](https://martinfowler.com/bliki/TestDrivenDevelopment.html); write as little code as possible (code needs maintenance).
+2. Write agent-notes to <PROJECT-DIR>/agentic/plans/<plan-name>/memories/<implementor>-memory.md: (2.1) table of files read/written, (2.2) summary of what was implemented, (2.3) gist of what was learned. This file is your serialized context: it lets the orchestrator resume you if a late message lands after you exit — keep it current.
+3. Coordinate over the stream (S2-S6); do NOT poll files, do NOT block.
+  3.1 Start: ensure group (S4), drain backlog (S5; +S6 if resumed) so you begin with everything addressed to you.
+  3.2 Poll (S5) at checkpoints only — before claiming a file, a design choice, or a commit — where new info changes behavior; mid trivial-edit polling is waste. Incorporate, continue.
+  3.3 Never busy-wait: hard dependency -> send type=ask, record it, RETURN for the orchestrator to sequence.
+  3.4 Before exit: one FINAL drain+ack (S5). You're still alive — if a msg matters, amend now rather than punt to tie-up.
+  3.5 XACK everything handled; the sweep (7.2 in actor-orchestrator.agent) treats un-acked + never-delivered as loose ends.
+4. Aim for an optimal, industry-standard solution; negotiate via advisory messages where useful.

@@ -1,0 +1,27 @@
+# Meta Inf:
+# A .agent file defines an agentic pattern. This file is the dispatcher for the actor pattern.
+# Vars: <PROJECT-DIR> project dir | <plan-name> plan id | <AGENT> agent identity (orchestrator, impl-backend, ...)
+#       <STREAM> = agentic:<plan-name>:channel  (redis stream key for this plan)
+
+ROLE ROUTING — read the substrate below, then your role file:
+  You are the Orchestrator (team lead, one per plan) -> ALSO read actor-orchestrator.agent
+  You are an Implementor (teammate sub-agent)        -> ALSO read actor-implementor.agent
+
+# Comms = Redis Streams via redis-cli. Why, not a log file:
+#  - Relative-path file breaks under git worktrees (<PROJECT-DIR> differs per worktree -> appends never converge);
+#    a network service at a stable address is worktree-immune.
+#  - Sub-agents run to completion; they cannot listen, only poll at checkpoints.
+#  - Per-consumer server-side cursor (consumer group) => each poll returns ONLY new msgs; re-polling an idle
+#    stream returns nil. No dupes, no wasted context; the server holds the cursor (compaction can't eat it).
+#  - The STREAM is source of truth; the orchestrator is a lossy broker. A msg must never live only in an agent's
+#    context. Correctness = durable stream + acks + deterministic tie-up sweep; mid-run routing is latency only.
+
+Communication Substrate (Redis Streams) — used by both roles
+S1. Precheck `redis-cli ping` == PONG before any fan-out (else start redis-server / point at a host).
+S2. One stream per plan: <STREAM> = agentic:<plan-name>:channel.
+S3. Send:  redis-cli XADD <STREAM> '*' from <AGENT> to <AGENT|all> type <info|claim|ask|done> body "<text <4KB>"
+S4. Each agent owns group grp:<AGENT>; create once (from start, ignore BUSYGROUP):
+       redis-cli XGROUP CREATE <STREAM> grp:<AGENT> 0 MKSTREAM
+S5. Poll "since last poll":  redis-cli XREADGROUP GROUP grp:<AGENT> <AGENT> COUNT 100 STREAMS <STREAM> '>'
+    Filter to==<AGENT>||all; after handling:  redis-cli XACK <STREAM> grp:<AGENT> <id>...
+S6. Re-read own un-acked backlog (on resume):  redis-cli XREADGROUP GROUP grp:<AGENT> <AGENT> STREAMS <STREAM> 0
